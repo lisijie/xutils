@@ -4,9 +4,14 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+var (
+	SkipDir = fs.SkipDir
 )
 
 // ZipDir 将dir整个目录打包到为zip文件
@@ -135,4 +140,35 @@ func UnzipReader(rd io.ReaderAt, size int64, dir string) error {
 		fileReader.Close()
 	}
 	return nil
+}
+
+// ZipWalk 遍历zip中的文件，执行回调函数，如果回调函数返回error，则终止迭代
+func ZipWalk(filename string, fun func(zf *zip.File) error) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	return ZipWalkReader(f, fi.Size(), fun)
+}
+
+// ZipWalkReader 遍历zip reader中的文件，执行回调函数，如果回调函数返回error，则终止迭代
+func ZipWalkReader(rd io.ReaderAt, fsize int64, fun func(zf *zip.File) error) (err error) {
+	zr, err := zip.NewReader(rd, fsize)
+	if err != nil {
+		return
+	}
+	for _, v := range zr.File {
+		if err = fun(v); err != nil {
+			if err == SkipDir {
+				return nil
+			}
+			return
+		}
+	}
+	return
 }
